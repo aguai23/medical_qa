@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta content="text/html" charset="UTF-8">
+    <title>对话测试</title>
+</head>
+<body>
+    <form action="{{ url_for('handle_question')}}", method="post", style="text-align: center">
+       请输入问题：<input type="text" name="question" autocomplete="off"/><br>
+        {% if question %}
+        相似问题： {{question}}
+        {% endif %} <br>
+        {% if result%}
+        {{result}}
+        {% endif %}
+        <br>
+        <input type="submit" value="提交">
+    </form>
+
+</body>
+</html>
