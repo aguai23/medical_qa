@@ -10,6 +10,7 @@ from scipy import spatial
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
 
+
 class InputExample(object):
 
   def __init__(self, unique_id, text_a, text_b):

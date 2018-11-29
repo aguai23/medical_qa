@@ -43,26 +43,31 @@ class KnowledgeTree(object):
         child_node = KnowledgeNode(child, None, connection)
         if self.root is None:
           self.root = KnowledgeNode(parent, None, None)
-        parent_node = self.search_parent(parent)
+        parent_node = self.search_node(parent)
         child_node.parent = parent_node
         parent_node.add_child(child_node)
 
-  def search_parent(self, parent_value):
+  def search_node(self, node_value):
     """
     search the node with exact name, use bfs search
-    :param parent_value: the value of corresponding node
+    :param node_value: the value of corresponding node
     :return: target node
     """
     queue = [self.root]
     while len(queue) > 0:
       node = queue.pop(0)
-      if node.value == parent_value:
+      if node.value == node_value:
         return node
       queue += node.children
 
     return None
 
   def print_tree(self):
+    """
+    hope we can print the tree structure in an elegant way,
+    haven't figured it out yet
+    :return:
+    """
     queue = [self.root]
     next_layer = []
     while len(queue) > 0:
