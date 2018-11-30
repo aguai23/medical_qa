@@ -7,11 +7,14 @@ import numpy as np
 
 class DataProcessor(object):
 
-  def __init__(self, data_file, knowledge_tree):
+  def __init__(self, data_file, knowledge_tree, max_sequence, max_entity, word_embedding=100):
     self.training_data = []
     self.train_label = []
     self.valid_data = []
     self.valid_label = []
+    self.max_sequence = max_sequence
+    self.max_entity = max_entity
+    self.word_embedding = word_embedding
     self.questions, self.answers = self.load_data(data_file)
     self.build_samples()
     self.knowledge_tree = knowledge_tree
@@ -118,36 +121,53 @@ class DataProcessor(object):
     model = gensim.models.Word2Vec.load("./data/word2vec")
     # segment words and convert to word embedding representations
     vector_train_data = []
-    default_embedding = np.zeros(100)
+    default_embedding = np.zeros(self.word_embedding)
+
+    question_embeddings = []
+    entity_embeddings = []
+
     for sample in self.training_data:
       question = sample[0]
       entity = sample[1]
+
+      # remove all the punctuation
       question = re.sub(u"[%s]+" % punctuation, "", question)
-      question_tokens = jieba.cut(question)
-      entity_tokens = jieba.cut(entity)
-      question_feature = []
-      for token in question_tokens:
+      question_tokens = list(jieba.cut(question))
+      entity_tokens = list(jieba.cut(entity))
+
+      question_feature = np.zeros((self.max_sequence, self.word_embedding))
+      for i in range(len(question_tokens)):
+
+        if i == self.max_sequence:
+          break
+
+        token = question_tokens[i]
         if token not in model.wv:
-          question_feature.append(default_embedding)
+          question_feature[i] = default_embedding
         else:
           embedding = model.wv[token]
-          question_feature.append(embedding)
-      entity_feature = []
-      for token in entity_tokens:
+          question_feature[i] = embedding
+
+      entity_feature = np.zeros((self.max_entity, self.word_embedding))
+      for i in range(len(entity_tokens)):
+
+        if i == self.max_entity:
+          break
+
+        token = entity_tokens[i]
         if token not in model.wv:
-          entity_feature.append(default_embedding)
+          entity_feature[i] = default_embedding
         else:
           embedding = model.wv[token]
-          entity_feature.append(embedding)
-      question_feature = np.asarray(question_feature)
-      entity_feature = np.asarray(entity_feature)
-      # print(question_feature.shape)
-      # print(entity_feature.shape)
-      vector_train_data.append((question_feature, entity_feature))
-    self.training_data = vector_train_data
-    # print(len(self.training_data))
-    # print(len(self.train_label))
-    return self.training_data, self.train_label
+          entity_feature[i] = embedding
+
+      question_embeddings.append(question_feature)
+      entity_embeddings.append(entity_feature)
+
+    print(np.asarray(question_embeddings).shape)
+    print(np.asarray(entity_embeddings).shape)
+    print(np.asarray(self.train_label).shape)
+    return np.asarray(question_embeddings), np.asarray(entity_embeddings), np.asarray(self.train_label)
 
   @staticmethod
   def parse_answer(answer):
