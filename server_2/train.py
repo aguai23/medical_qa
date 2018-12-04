@@ -35,6 +35,11 @@ flags.DEFINE_integer(
   "train_batch_size", 32,
   "batch size of training")
 
+flags.DEFINE_integer(
+  "train_epoch", 100,
+  "training epochs"
+)
+
 
 def build_model(features, labels, hidden_size=256, fc_size=100, num_labels=2):
   sentence_embedding = features[0]
@@ -62,9 +67,10 @@ def model_fn_builder(hidden_size, fc_size, num_labels):
 
     with tf.variable_scope("model"):
       with tf.variable_scope("rnn"):
-        lstm_cell = tf.nn.rnn_cell.LSTMCell(hidden_size, state_is_tuple=False)
-        _, sentence_state = tf.nn.dynamic_rnn(lstm_cell, sentence_embedding, dtype=tf.float32)
-        _, entity_state = tf.nn.dynamic_rnn(lstm_cell, entity_embedding, dtype=tf.float32)
+        sentence_cell = tf.nn.rnn_cell.LSTMCell(hidden_size, state_is_tuple=False, name="sentence_cell")
+        entity_cell = tf.nn.rnn_cell.LSTMCell(hidden_size, state_is_tuple=False, name="entity_cell")
+        _, sentence_state = tf.nn.dynamic_rnn(sentence_cell, sentence_embedding, dtype=tf.float32)
+        _, entity_state = tf.nn.dynamic_rnn(entity_cell, entity_embedding, dtype=tf.float32)
 
       with tf.variable_scope("dense"):
         # fully connected
@@ -83,10 +89,30 @@ def model_fn_builder(hidden_size, fc_size, num_labels):
     if mode == tf.estimator.ModeKeys.TRAIN:
       global_step = tf.train.get_or_create_global_step()
       train_op = tf.train.AdamOptimizer(learning_rate=0.5).minimize(loss, global_step=global_step)
+      logging_hook = tf.train.LoggingTensorHook(
+        {"loss": loss}, every_n_iter=10
+      )
       output_spec = tf.estimator.EstimatorSpec(
         mode=mode,
         loss=loss,
-        train_op=train_op
+        train_op=train_op,
+        training_hooks=[logging_hook]
+      )
+    elif mode == tf.estimator.ModeKeys.EVAL:
+      description_predictions = tf.to_float(logits[:, 0] > 0.5)
+      continue_predictions = tf.to_float(logits[:, 1] > 0.5)
+      description_accuracy = tf.metrics.accuracy(labels[:, 0], description_predictions)
+      continue_accuracy = tf.metrics.accuracy(labels[:, 1], continue_predictions)
+      eval_metric = {
+        "description_accuracy": description_accuracy,
+        "continue_accuracy": continue_accuracy,
+        "eval_loss": tf.metrics.mean(loss)
+      }
+      output_spec = tf.estimator.EstimatorSpec(
+        mode=mode,
+        loss=loss,
+        eval_metric_ops=eval_metric,
+
       )
     return output_spec
 
@@ -114,23 +140,55 @@ def input_fn_builder(question_feature, entity_feature, training_label):
 
 
 def main(_):
+  tf.logging.set_verbosity(tf.logging.INFO)
+
   knowledge_tree = KnowledgeTree(FLAGS.graph_path)
   data_processor = DataProcessor(FLAGS.data_path, knowledge_tree, FLAGS.max_sequence, FLAGS.max_entity)
   question_feature, entity_feature, labels = data_processor.get_training_samples()
 
+  train_numbers = len(question_feature)
+  training_steps = int(train_numbers / FLAGS.train_batch_size * FLAGS.train_epoch)
+
   input_fn = input_fn_builder(question_feature, entity_feature, labels)
+
+  valid_question, valid_entity, valid_label = data_processor.get_valid_samples()
+  valid_numbers = len(valid_question)
+  valid_steps = int(valid_numbers / FLAGS.train_batch_size)
+  evaluate_fn = input_fn_builder(valid_question, valid_entity, valid_label)
+
   model_fn = model_fn_builder(
     hidden_size=256,
     fc_size=100,
     num_labels=2
   )
 
+  config = tf.estimator.RunConfig(
+    save_checkpoints_steps=100,
+    log_step_count_steps=10,
+    save_summary_steps=10
+  )
   estimator = tf.estimator.Estimator(
     model_dir=FLAGS.output_dir,
-    model_fn=model_fn
+    model_fn=model_fn,
+    config=config
   )
 
-  estimator.train(input_fn=input_fn, max_steps=600)
+  train_spec = tf.estimator.TrainSpec(
+    input_fn=input_fn,
+    max_steps=training_steps
+  )
+
+  eval_spec = tf.estimator.EvalSpec(
+    input_fn=evaluate_fn,
+    steps=valid_steps,
+    throttle_secs=10
+  )
+
+  tf.estimator.train_and_evaluate(
+    estimator,
+    train_spec,
+    eval_spec
+  )
 
 
 if __name__ == "__main__":

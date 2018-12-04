@@ -3,15 +3,21 @@ from zhon.hanzi import punctuation
 import re
 import gensim
 import numpy as np
+from sklearn.utils import shuffle
 
 
 class DataProcessor(object):
 
-  def __init__(self, data_file, knowledge_tree, max_sequence, max_entity, word_embedding=100):
+  def __init__(self, data_file, knowledge_tree, max_sequence, max_entity, word_embedding=100, train_percent=0.8):
     self.training_data = []
+    self.train_question = []
+    self.train_entity = []
     self.train_label = []
-    self.valid_data = []
+    self.valid_question = []
+    self.valid_entity = []
     self.valid_label = []
+
+    self.train_percent = train_percent
     self.max_sequence = max_sequence
     self.max_entity = max_entity
     self.word_embedding = word_embedding
@@ -164,10 +170,24 @@ class DataProcessor(object):
       question_embeddings.append(question_feature)
       entity_embeddings.append(entity_feature)
 
-    print(np.asarray(question_embeddings).shape)
-    print(np.asarray(entity_embeddings).shape)
+    question_embeddings, entity_embeddings, train_label = shuffle(question_embeddings, entity_embeddings,
+                                                                  self.train_label)
+    train_number = int(len(question_embeddings) * self.train_percent)
+    self.train_question = question_embeddings[:train_number]
+    self.train_entity = entity_embeddings[:train_number]
+    self.train_label = train_label[:train_number]
+
+    self.valid_question = question_embeddings[train_number:]
+    self.valid_entity = entity_embeddings[train_number:]
+    self.valid_label = train_label[train_number:]
+
+    print(np.asarray(self.train_question).shape)
+    print(np.asarray(self.train_entity).shape)
     print(np.asarray(self.train_label).shape)
-    return np.asarray(question_embeddings), np.asarray(entity_embeddings), np.asarray(self.train_label)
+    return np.asarray(self.train_question), np.asarray(self.train_entity), np.asarray(self.train_label)
+
+  def get_valid_samples(self):
+    return np.asarray(self.valid_question), np.asarray(self.valid_entity), np.asarray(self.valid_label)
 
   @staticmethod
   def parse_answer(answer):
