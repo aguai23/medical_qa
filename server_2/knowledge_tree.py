@@ -47,6 +47,9 @@ class KnowledgeTree(object):
         child_node.parent = parent_node
         parent_node.add_child(child_node)
 
+  def get_root(self):
+    return self.root
+
   def search_node(self, node_value):
     """
     search the node with exact name, use bfs search
