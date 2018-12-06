@@ -47,22 +47,40 @@ flags.DEFINE_integer(
 )
 
 
-def build_model(features, labels, hidden_size=256, fc_size=100, num_labels=2):
-  sentence_embedding = features[0]
-  entity_embedding = features[1]
-  lstm_cell = tf.nn.rnn_cell.LSTMCell(hidden_size)
-  _, sentence_state = tf.nn.dynamic_rnn(lstm_cell, sentence_embedding, dtype=tf.float32)
-  _, entity_state = tf.nn.dynamic_rnn(lstm_cell, entity_embedding, dtype=tf.float32)
+def self_attention(entity_embedding):
+  embeddings = tf.split(entity_embedding, FLAGS.max_entity, axis=1)
+  attention_vector = None
+  for embedding in embeddings:
+    # print(embedding)
+    attention_value = tf.layers.dense(embedding, 1, reuse=tf.AUTO_REUSE, name="entity_attention", activation=tf.nn.relu)
+    if attention_vector is None:
+      attention_vector = attention_value
+    else:
+      attention_vector = tf.concat([attention_vector, attention_value], axis=1)
+  attention_vector = tf.nn.softmax(attention_vector)
+  # print("attention vector" + str(attention_vector))
+  attention_entity = tf.multiply(entity_embedding, attention_vector)
+  # print(attention_entity)
+  attention_entity = tf.reduce_sum(attention_entity, axis=1)
+  return attention_entity
 
-  # fully connected
-  sentence_feature = tf.layers.dense(sentence_state, fc_size, activation=tf.nn.relu)
-  entity_feature = tf.layers.dense(entity_state, fc_size, activation=tf.nn.relu)
-  combine = tf.multiply(sentence_feature, entity_feature)
-  logits = tf.layers.dense(combine, num_labels, activation=None)
 
-  loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=labels)
-  train_op = tf.train.AdamOptimizer(learning_rate=0.1).minimize(loss)
-  return loss, train_op
+def sequence_attention(sentence_embedding, entity_state):
+  embeddings = tf.split(sentence_embedding, FLAGS.max_sequence, axis=1)
+  attention_vector = None
+  for embedding in embeddings:
+    attention_value = tf.layers.dense(tf.multiply(tf.squeeze(embedding, [1]), entity_state), 1, reuse=tf.AUTO_REUSE,
+                                      name="sequence_attention", activation=tf.nn.relu)
+    # print(attention_value)
+    if attention_vector is None:
+      attention_vector = attention_value
+    else:
+      attention_vector = tf.concat([attention_vector, attention_value], axis=1)
+  attention_vector = tf.nn.softmax(attention_vector)
+  # print(attention_vector)
+  attention_sequence = tf.multiply(sentence_embedding, tf.expand_dims(attention_vector, 2))
+  attention_sequence = tf.reduce_sum(attention_sequence, axis=1)
+  return attention_sequence
 
 
 def model_fn_builder(hidden_size, fc_size, num_labels):
@@ -79,9 +97,11 @@ def model_fn_builder(hidden_size, fc_size, num_labels):
       with tf.variable_scope("rnn"):
         sentence_cell = tf.nn.rnn_cell.LSTMCell(hidden_size, state_is_tuple=False, name="sentence_cell")
         entity_cell = tf.nn.rnn_cell.LSTMCell(hidden_size, state_is_tuple=False, name="entity_cell")
-        _, sentence_state = tf.nn.dynamic_rnn(sentence_cell, sentence_embedding, dtype=tf.float32)
-        _, entity_state = tf.nn.dynamic_rnn(entity_cell, entity_embedding, dtype=tf.float32)
+        sentence_embedding, _ = tf.nn.dynamic_rnn(sentence_cell, sentence_embedding, dtype=tf.float32)
+        entity_embedding, _ = tf.nn.dynamic_rnn(entity_cell, entity_embedding, dtype=tf.float32)
 
+        entity_state = self_attention(entity_embedding)
+        sentence_state = sequence_attention(sentence_embedding, entity_state)
       with tf.variable_scope("dense"):
         # fully connected
         with tf.variable_scope("question"):

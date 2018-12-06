@@ -79,7 +79,7 @@ def handle_question():
     # print(entity_embedding)
     input_fn = input_fn_builder(question_embedding[np.newaxis, :], entity_embedding[np.newaxis, :],
                                 label_dummy[np.newaxis, :], predict=True)
-    predictions = estimator.predict(input_fn, checkpoint_path="./data/model/model.ckpt-1500")
+    predictions = estimator.predict(input_fn, checkpoint_path="./data/model/model.ckpt-1200")
     # print(list(predictions))
     logits = list(predictions)[0]["logits"]
     description_logit = logits[0]
